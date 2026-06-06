@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World Tourist — Game Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,800;1,600&family=Libre+Franklin:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f3e9d2;
+    --paper-2:#efe2c4;
+    --ink:#1f2a44;
+    --ink-soft:#42506e;
+    --red:#b23a2e;
+    --gold:#c08a2d;
+    --line:#cdbd97;
+
+    /* color groups (sets) */
+    --g-cafe:#8a5a3b;
+    --g-celeste:#6fb8d6;
+    --g-rosa:#cf6f9e;
+    --g-naranja:#e08a2e;
+    --g-rojo:#cc3b35;
+    --g-amarillo:#e9c531;
+    --g-verde:#3f9d5f;
+    --g-azul:#2f4a8c;
+    --g-aerea:#2b2b2b;
+    --g-serv:#5c6b7a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:"Libre Franklin",system-ui,sans-serif;
+    color:var(--ink);
+    background:
+      radial-gradient(120% 120% at 10% 0%, #f7efda 0%, var(--paper) 45%, var(--paper-2) 100%);
+    min-height:100vh;
+    padding:24px 16px 48px;
+  }
+  .wrap{max-width:1040px;margin:0 auto}
+  .page-head{text-align:center;margin-bottom:18px}
+  .kicker{
+    font-family:"Space Mono",monospace;letter-spacing:.32em;
+    text-transform:uppercase;font-size:11px;color:var(--red);
+    border:1px dashed var(--red);display:inline-block;padding:4px 12px;border-radius:2px;
+  }
+  .page-head h1{
+    font-family:"Playfair Display",serif;font-weight:800;
+    font-size:clamp(28px,5vw,46px);margin:.3em 0 .1em;letter-spacing:.01em;
+  }
+  .page-head p{margin:0;color:#5a5238;font-size:14px}
+
+  /* ---------- BOARD ---------- */
+  .board{
+    position:relative;
+    width:min(92vw,920px);height:min(92vw,920px);
+    margin:14px auto 0;
+    display:grid;
+    grid-template-columns:1.55fr repeat(9,1fr) 1.55fr;
+    grid-template-rows:1.55fr repeat(9,1fr) 1.55fr;
+    gap:4px;
+    padding:4px;
+    background:
+      repeating-linear-gradient(45deg,#1f2a44 0 14px,#f3e9d2 14px 28px,#b23a2e 28px 42px,#f3e9d2 42px 56px);
+    border-radius:8px;
+    box-shadow:0 18px 50px rgba(31,42,68,.28);
+  }
+  .board-inner-bg{
+    position:absolute;inset:18px;background:var(--paper);border:1.5px solid var(--line);
+    border-radius:4px;z-index:0;
+  }
+
+  .cell{
+    position:relative;z-index:1;
+    background:#fbf5e6;border:1px solid #d9caa3;border-radius:3px;
+    display:flex;flex-direction:column;overflow:hidden;
+    cursor:default;min-width:0;min-height:0;
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .cell.clickable{cursor:pointer}
+  .cell.clickable:hover{transform:translateY(-2px);box-shadow:0 6px 14px rgba(31,42,68,.22);z-index:3}
+  .band{height:22%;min-height:14px;width:100%;border-bottom:1px solid rgba(0,0,0,.18)}
+  .cell-body{flex:1;display:flex;flex-direction:column;justify-content:space-between;padding:4px 4px 3px;min-height:0}
+  .cell .name{
+    font-weight:700;font-size:10.5px;line-height:1.08;text-transform:uppercase;
+    letter-spacing:.01em;color:var(--ink);
+  }
+  .cell .meta{font-family:"Space Mono",monospace;font-size:9px;color:#7a6a44}
+  .cell .price{font-family:"Space Mono",monospace;font-weight:700;font-size:10px;color:var(--ink)}
+  .cell .icon{font-size:18px;line-height:1}
+  .cell .sub{font-size:8.5px;color:#8a7c54;text-transform:uppercase;letter-spacing:.06em}
+
+  /* corners */
+  .corner{align-items:center;justify-content:center;text-align:center;padding:6px;background:#f6edd6}
+  .corner .icon{font-size:clamp(20px,3.2vw,34px)}
+  .corner .ctitle{font-family:"Playfair Display",serif;font-weight:800;font-size:clamp(10px,1.5vw,15px);line-height:1.05;margin-top:4px;text-transform:uppercase}
+  .corner .csub{font-family:"Space Mono",monospace;font-size:9px;color:#7a6a44;margin-top:2px}
+
+  /* center */
+  .center{
+    grid-column:2 / 11;grid-row:2 / 11;z-index:1;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;gap:14px;padding:18px;
+  }
+  .center .logo-kicker{font-family:"Space Mono",monospace;letter-spacing:.4em;font-size:11px;color:var(--red);text-transform:uppercase}
+  .center h2{
+    font-family:"Playfair Display",serif;font-weight:800;
+    font-size:clamp(26px,6vw,64px);line-height:.95;margin:0;color:var(--ink);
+    transform:rotate(-4deg);text-shadow:2px 2px 0 rgba(192,138,45,.35);
+  }
+  .center .globe{font-size:clamp(40px,9vw,90px);filter:drop-shadow(2px 4px 4px rgba(0,0,0,.2))}
+  .decks{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+  .deck{
+    font-family:"Space Mono",monospace;font-size:11px;font-weight:700;letter-spacing:.12em;
+    padding:8px 14px;border-radius:4px;color:#fff;transform:rotate(-2deg);
+    box-shadow:2px 3px 0 rgba(0,0,0,.18);text-transform:uppercase;
+  }
+  .deck.email{background:var(--ink)}
+  .deck.sms{background:var(--red);transform:rotate(2deg)}
+  .center .tag{font-size:11px;color:#6f6238;max-width:42ch}
+
+  /* ---------- DETAIL CARD ---------- */
+  .overlay{
+    position:fixed;inset:0;background:rgba(31,42,68,.45);backdrop-filter:blur(2px);
+    display:none;align-items:center;justify-content:center;padding:18px;z-index:50;
+  }
+  .overlay.open{display:flex}
+  .card{
+    width:min(360px,92vw);background:#fbf5e6;border-radius:10px;overflow:hidden;
+    box-shadow:0 24px 60px rgba(0,0,0,.4);border:1px solid #d9caa3;
+    animation:pop .18s ease;
+  }
+  @keyframes pop{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+  .card-band{height:64px;display:flex;align-items:center;justify-content:center;color:#fff}
+  .card-band .ttl{font-family:"Playfair Display",serif;font-weight:800;font-size:22px;text-transform:uppercase;letter-spacing:.02em;text-shadow:1px 1px 0 rgba(0,0,0,.25)}
+  .card-body{padding:16px 18px 18px}
+  .card-row{display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;border-bottom:1px dashed var(--line);font-size:13px}
+  .card-row:last-child{border-bottom:0}
+  .card-row .k{color:#6f6238;text-transform:uppercase;font-size:10.5px;letter-spacing:.08em}
+  .card-row .v{font-family:"Space Mono",monospace;font-weight:700;color:var(--ink)}
+  .card .group-tag{display:inline-block;font-size:10px;font-family:"Space Mono",monospace;letter-spacing:.1em;color:#fff;padding:2px 8px;border-radius:999px;margin-top:6px;text-transform:uppercase}
+  .card .desc{font-size:12px;color:#6f6238;margin:10px 0 0;line-height:1.4}
+  .close{margin-top:14px;width:100%;border:0;background:var(--ink);color:#fff;font-family:"Space Mono",monospace;
+    letter-spacing:.1em;padding:10px;border-radius:6px;cursor:pointer;text-transform:uppercase;font-size:12px}
+  .close:hover{background:var(--red)}
+
+  /* legend */
+  .legend{
+    max-width:920px;margin:22px auto 0;display:flex;flex-wrap:wrap;gap:10px 18px;justify-content:center;
+    font-size:12px;color:#5a5238;
+  }
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:13px;height:13px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.15)}
+  .foot{max-width:760px;margin:24px auto 0;text-align:center;font-size:11.5px;color:#8a7c54;line-height:1.5}
+
+  @media (max-width:560px){
+    .cell .name{font-size:8.5px}
+    .cell .price{font-size:8.5px}
+    .cell .meta{font-size:7.5px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="page-head">
+    <span class="kicker">Board game · Classic edition</span>
+    <h1>World Tourist</h1>
+  </div>
+
+  <div class="board" id="board">
+    <div class="board-inner-bg"></div>
+    <div class="center">
+      <div class="logo-kicker">★ Own the world ★</div>
+      <div class="globe">🌍</div>
+      <h2>World<br>Tourist</h2>
+      <div class="decks">
+        <div class="deck email">✉ E-MAIL</div>
+        <div class="deck sms">✆ SMS</div>
+      </div>
+      <div class="tag">Collect a same-color set to build restaurants and hotels, then charge rent to anyone who lands there.</div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="card" id="card"></div>
+</div>
+
+<script>
+const COLORS = {
+  cafe:'var(--g-cafe)', celeste:'var(--g-celeste)', rosa:'var(--g-rosa)',
+  naranja:'var(--g-naranja)', rojo:'var(--g-rojo)', amarillo:'var(--g-amarillo)',
+  verde:'var(--g-verde)', azul:'var(--g-azul)', aerea:'var(--g-aerea)', serv:'var(--g-serv)'
+};
+const GROUP_LABEL = {
+  cafe:'Central America I', celeste:'Central America II', rosa:'Northern South America',
+  naranja:'South America', rojo:'Europe I', amarillo:'Europe II',
+  verde:'Asia', azul:'World Powers', aerea:'Airline', serv:'Utility'
+};
+
+// 40 spaces in travel order (0 = Start)
+const CELLS = [
+  {t:'special', key:'start'},
+  {t:'prop', name:'Honduras', group:'cafe', price:1000},
+  {t:'card', kind:'sms'},
+  {t:'prop', name:'Nicaragua', group:'cafe', price:1000},
+  {t:'prop', name:'Panama', group:'cafe', price:1200},
+  {t:'air', name:'Aeroméxico', price:4000},
+  {t:'prop', name:'Guatemala', group:'celeste', price:2000},
+  {t:'tax', name:'Customs', icon:'🛃', amount:4000, desc:'Pay 10% of your total wealth or $4,000.'},
+  {t:'prop', name:'El Salvador', group:'celeste', price:2000},
+  {t:'prop', name:'Costa Rica', group:'celeste', price:2400},
+  {t:'special', key:'deported'},
+  {t:'prop', name:'Colombia', group:'rosa', price:2800},
+  {t:'serv', name:'Electric Company', icon:'💡', price:3000},
+  {t:'prop', name:'Venezuela', group:'rosa', price:2800},
+  {t:'prop', name:'Ecuador', group:'rosa', price:3200},
+  {t:'air', name:'Mexicana', price:4000},
+  {t:'prop', name:'Peru', group:'naranja', price:3600},
+  {t:'card', kind:'email'},
+  {t:'prop', name:'Chile', group:'naranja', price:3600},
+  {t:'prop', name:'Argentina', group:'naranja', price:4000},
+  {t:'special', key:'oceania'},
+  {t:'prop', name:'Spain', group:'rojo', price:4400},
+  {t:'card', kind:'sms'},
+  {t:'prop', name:'France', group:'rojo', price:4400},
+  {t:'prop', name:'Italy', group:'rojo', price:4800},
+  {t:'air', name:'Iberia', price:4000},
+  {t:'prop', name:'England', group:'amarillo', price:5200},
+  {t:'prop', name:'Germany', group:'amarillo', price:5200},
+  {t:'serv', name:'Water Works', icon:'🚰', price:3000},
+  {t:'prop', name:'Switzerland', group:'amarillo', price:5600},
+  {t:'special', key:'goto'},
+  {t:'prop', name:'Russia', group:'verde', price:6000},
+  {t:'prop', name:'China', group:'verde', price:6000},
+  {t:'card', kind:'email'},
+  {t:'prop', name:'Japan', group:'verde', price:6400},
+  {t:'air', name:'Pan Am', price:4000},
+  {t:'prop', name:'Egypt', group:'azul', price:7000},
+  {t:'prop', name:'Canada', group:'azul', price:7500},
+  {t:'tax', name:'Luxury Tax', icon:'🧾', amount:2000, desc:'Luxury tax. Pay $2,000 to the bank.'},
+  {t:'prop', name:'United States', group:'azul', price:8000},
+];
+
+const SPECIALS = {
+  start:    {icon:'➡️', title:'Start', sub:'Mexico · collect $20,000'},
+  deported: {icon:'🧳', title:'Deported', sub:'Just visiting · Greenland'},
+  oceania:  {icon:'🏝️', title:'Oceania', sub:'Rest · just sightseeing'},
+  goto:     {icon:'🚓', title:'Go to Deported!', sub:'Go straight to Greenland'},
+};
+
+// grid position in 11x11 by travel index
+function gridPos(i){
+  if(i===0)  return {r:11,c:11, corner:true};
+  if(i<10)   return {r:11,c:11-i, side:'bottom'};
+  if(i===10) return {r:11,c:1, corner:true};
+  if(i<20)   return {r:21-i,c:1, side:'left'};
+  if(i===20) return {r:1,c:1, corner:true};
+  if(i<30)   return {r:1,c:i-19, side:'top'};
+  if(i===30) return {r:1,c:11, corner:true};
+  return {r:i-29,c:11, side:'right'};
+}
+
+const board = document.getElementById('board');
+const money = n => '$'+n.toLocaleString('en-US');
+
+CELLS.forEach((cell,i)=>{
+  const p = gridPos(i);
+  const el = document.createElement('div');
+  el.style.gridRow = p.r;
+  el.style.gridColumn = p.c;
+  el.className = 'cell';
+
+  if(cell.t==='special'){
+    const s = SPECIALS[cell.key];
+    el.classList.add('corner');
+    el.innerHTML = `<div class="icon">${s.icon}</div><div class="ctitle">${s.title}</div><div class="csub">${s.sub}</div>`;
+  }
+  else if(cell.t==='prop'){
+    el.classList.add('clickable');
+    el.innerHTML = `
+      <div class="band" style="background:${COLORS[cell.group]}"></div>
+      <div class="cell-body">
+        <div class="name">${cell.name}</div>
+        <div class="price">${money(cell.price)}</div>
+      </div>`;
+    el.onclick = ()=>openCard(cell);
+  }
+  else if(cell.t==='air'){
+    el.classList.add('clickable');
+    el.innerHTML = `
+      <div class="cell-body" style="align-items:center;justify-content:center;text-align:center;gap:3px">
+        <div class="icon">✈️</div>
+        <div class="name" style="font-size:9.5px">${cell.name}</div>
+        <div class="price">${money(cell.price)}</div>
+      </div>`;
+    el.onclick = ()=>openCard(cell);
+  }
+  else if(cell.t==='serv'){
+    el.classList.add('clickable');
+    el.innerHTML = `
+      <div class="cell-body" style="align-items:center;justify-content:center;text-align:center;gap:3px">
+        <div class="icon">${cell.icon}</div>
+        <div class="name" style="font-size:9px">${cell.name}</div>
+        <div class="price">${money(cell.price)}</div>
+      </div>`;
+    el.onclick = ()=>openCard(cell);
+  }
+  else if(cell.t==='card'){
+    const isEmail = cell.kind==='email';
+    el.innerHTML = `
+      <div class="cell-body" style="align-items:center;justify-content:center;text-align:center;gap:4px">
+        <div class="icon">${isEmail?'✉️':'✆'}</div>
+        <div class="sub">${isEmail?'E-mail':'SMS'}</div>
+      </div>`;
+    el.style.background = isEmail ? '#eef0f4' : '#f6e6e2';
+  }
+  else if(cell.t==='tax'){
+    el.innerHTML = `
+      <div class="cell-body" style="align-items:center;justify-content:center;text-align:center;gap:3px">
+        <div class="icon">${cell.icon}</div>
+        <div class="name" style="font-size:9px">${cell.name}</div>
+        <div class="price">${money(cell.amount)}</div>
+      </div>`;
+    el.style.background = '#f0ece0';
+  }
+  board.appendChild(el);
+});
+
+// ---- property detail card ----
+const overlay = document.getElementById('overlay');
+const card = document.getElementById('card');
+
+function openCard(cell){
+  let color, label, rows='', desc='';
+  if(cell.t==='prop'){
+    color = COLORS[cell.group];
+    label = GROUP_LABEL[cell.group];
+    const base = Math.round(cell.price*0.1/10)*10;
+    rows = `
+      <div class="card-row"><span class="k">Price</span><span class="v">${money(cell.price)}</span></div>
+      <div class="card-row"><span class="k">Base rent</span><span class="v">${money(base)}</span></div>
+      <div class="card-row"><span class="k">With full set (double)</span><span class="v">${money(base*2)}</span></div>
+      <div class="card-row"><span class="k">House / restaurant cost</span><span class="v">${money(Math.round(cell.price*0.5/10)*10)}</span></div>
+      <div class="card-row"><span class="k">Rent with hotel</span><span class="v">${money(Math.round(cell.price*1.5/10)*10)}</span></div>`;
+    desc = 'Collect all 3 spaces of this color to build restaurants and hotels.';
+  } else if(cell.t==='air'){
+    color = COLORS.aerea; label = 'Airline';
+    rows = `
+      <div class="card-row"><span class="k">Price</span><span class="v">${money(cell.price)}</span></div>
+      <div class="card-row"><span class="k">Rent · 1 airline</span><span class="v">${money(500)}</span></div>
+      <div class="card-row"><span class="k">Rent · 2 airlines</span><span class="v">${money(1000)}</span></div>
+      <div class="card-row"><span class="k">Rent · 3 airlines</span><span class="v">${money(2000)}</span></div>
+      <div class="card-row"><span class="k">Rent · 4 airlines</span><span class="v">${money(4000)}</span></div>`;
+    desc = 'Cannot be built on. Rent rises with how many airlines you own.';
+  } else if(cell.t==='serv'){
+    color = COLORS.serv; label = 'Utility';
+    rows = `
+      <div class="card-row"><span class="k">Price</span><span class="v">${money(cell.price)}</span></div>
+      <div class="card-row"><span class="k">1 utility</span><span class="v">4× dice</span></div>
+      <div class="card-row"><span class="k">2 utilities</span><span class="v">10× dice</span></div>`;
+    desc = 'Rent equals the dice roll multiplied by the shown factor.';
+  }
+  card.innerHTML = `
+    <div class="card-band" style="background:${color}">
+      <div class="ttl">${cell.name}</div>
+    </div>
+    <div class="card-body">
+      <span class="group-tag" style="background:${color}">${label}</span>
+      ${rows}
+      <p class="desc">${desc}</p>
+      <button class="close" onclick="closeCard()">Close</button>
+    </div>`;
+  overlay.classList.add('open');
+}
+function closeCard(){ overlay.classList.remove('open'); }
+overlay.addEventListener('click', e=>{ if(e.target===overlay) closeCard(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeCard(); });
+</script>
+</body>
+</html>
