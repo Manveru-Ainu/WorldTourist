@@ -209,9 +209,30 @@ const CELLS = [
 // variant economy: double every property / airline / utility price
 CELLS.forEach(c=>{if(c.t==='prop'||c.t==='air'||c.t==='serv')c.price*=2;});
 const COLORS={cafe:'var(--g-cafe)',celeste:'var(--g-celeste)',rosa:'var(--g-rosa)',naranja:'var(--g-naranja)',rojo:'var(--g-rojo)',amarillo:'var(--g-amarillo)',verde:'var(--g-verde)',azul:'var(--g-azul)',aerea:'var(--g-aerea)',serv:'var(--g-serv)'};
-const SPECIALS={start:{icon:'➡️',title:'Start',sub:'+$2,000'},deported:{icon:'🧳',title:'Deported',sub:'Just visiting'},oceania:{icon:'🏝️',title:'Oceania',sub:'Rest'},goto:{icon:'🚓',title:'Go to Deported!',sub:'Go to jail'}};
+const SPECIALS={start:{icon:'➡️',title:'Start',sub:'+$2,000'},deported:{icon:'🧳',title:'Deported',sub:'Lose a turn'},oceania:{icon:'🏝️',title:'Oceania',sub:'+$1,500'},goto:{icon:'🚓',title:'Go to Deported!',sub:'Go to jail'}};
 const PCOLORS=['#cc3b35','#2f4a8c','#3f9d5f','#e08a2e','#7d4f9c','#1aa6a6'];
 const AIDIFF={Easy:.5,Medium:.72,Hard:.9};
+const EMAIL_CARDS=[
+  {text:'Tax refund from your last trip. Collect $2,000.',type:'gain',amount:2000},
+  {text:'Frequent-flyer bonus! Collect $1,500.',type:'gain',amount:1500},
+  {text:'You win an online travel raffle. Collect $3,000.',type:'gain',amount:3000},
+  {text:'Your bank refunds a double charge. Collect $1,000.',type:'gain',amount:1000},
+  {text:'Visa application fee. Pay $1,500.',type:'lose',amount:1500},
+  {text:'Excess baggage charge. Pay $2,000.',type:'lose',amount:2000},
+  {text:'Travel insurance bill. Pay $1,200.',type:'lose',amount:1200},
+  {text:'Hotel overbooking refund — collect $1,000 from each player.',type:'each_gain',amount:1000},
+  {text:'Passport renewal needed — miss a turn.',type:'skip'},
+];
+const SMS_CARDS=[
+  {text:'A friend sends you spending money. Collect $1,000.',type:'gain',amount:1000},
+  {text:'You found a great last-minute deal. Collect $1,500.',type:'gain',amount:1500},
+  {text:'Lucky lottery text! Collect $2,500.',type:'gain',amount:2500},
+  {text:'Roaming charges! Pay $1,000.',type:'lose',amount:1000},
+  {text:'Taxi scam — pay $1,200.',type:'lose',amount:1200},
+  {text:'Lost your phone. Pay $800.',type:'lose',amount:800},
+  {text:'You treat everyone to street food — pay $700 to each player.',type:'each_lose',amount:700},
+  {text:'Group photo — everyone tips you $600.',type:'each_gain',amount:600},
+];
 const groupMembers={};CELLS.forEach((c,i)=>{if(c.t==='prop'){(groupMembers[c.group]=groupMembers[c.group]||[]).push(i);}});
 const money=n=>'$'+(n||0).toLocaleString('en-US');
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
@@ -270,7 +291,8 @@ function renderView(v){
   const l=document.getElementById('log');l.innerHTML='';(v.log||[]).forEach(line=>{const d=document.createElement('div');d.innerHTML=line;l.appendChild(d);});
   // qbanner (spectator question)
   const qb=document.getElementById('qbanner');
-  if(v.activeQ){qb.style.display='block';qb.innerHTML=`<b>${v.activeQ.lvl} · ${v.activeQ.sec}</b> &nbsp; ${escapeHtml(v.activeQ.q)} <span style="color:#7a6a44">— ${escapeHtml(v.activeQ.who)} is answering…</span>`;}
+  if(v.activeCard){qb.style.display='block';qb.innerHTML=`<b>${v.activeCard.channel==='E-mail'?'✉ E-mail':'✆ SMS'}</b> &nbsp; ${escapeHtml(v.activeCard.text)} <span style="color:#7a6a44">— ${escapeHtml(v.activeCard.who)}</span>`;}
+  else if(v.activeQ){qb.style.display='block';qb.innerHTML=`<b>${v.activeQ.lvl} · ${v.activeQ.sec}</b> &nbsp; ${escapeHtml(v.activeQ.q)} <span style="color:#7a6a44">— ${escapeHtml(v.activeQ.who)} is answering…</span>`;}
   else qb.style.display='none';
 }
 
@@ -282,7 +304,7 @@ let inputResolver=null,inputKind=null,inputSeat=null,inputPayload=null;
 function buildPool(level){let arr=[];if(level==='Mixed'){Object.values(QUESTIONS).forEach(a=>arr=arr.concat(a));}else arr=QUESTIONS[level].slice();for(let i=arr.length-1;i>0;i--){const j=rnd(i+1);[arr[i],arr[j]]=[arr[j],arr[i]];}return arr;}
 function drawQ(){if(!G.pool.length)G.pool=buildPool(G.level);return G.pool.pop();}
 function pushLog(html){G.log.unshift(html);if(G.log.length>40)G.log.pop();}
-function buildView(){return{players:G.players.map(p=>({name:p.name,color:p.color,pos:p.pos,money:p.money,alive:p.alive,skip:p.skip,type:p.type})),owners:G.owners.slice(),cur:G.cur,dice:G.dice,log:G.log.slice(0,12),activeQ:G.activeQ,over:G.over};}
+function buildView(){return{players:G.players.map(p=>({name:p.name,color:p.color,pos:p.pos,money:p.money,alive:p.alive,skip:p.skip,type:p.type})),owners:G.owners.slice(),cur:G.cur,dice:G.dice,log:G.log.slice(0,12),activeQ:G.activeQ,activeCard:G.activeCard,over:G.over};}
 function pushState(){const v=buildView();renderView(v);if(isOnline)broadcast({t:'view',view:v});}
 function send(c,o){try{if(c&&c.open)c.send(o);}catch(e){}}
 function broadcast(o){conns.forEach(c=>send(c,o));}
@@ -320,6 +342,7 @@ function hideHostSkip(){const b=document.getElementById('hostSkip');if(b)b.style
 
 function aiDecide(kind,seat,payload){
   if(kind==='roll')return true;
+  if(kind==='card')return true;
   if(kind==='answer'){const correct=Math.random()<G.aiAcc;const q=payload.q;if(correct)return q.a;let w=rnd(4);if(w===q.a)w=(w+1)%4;return w;}
   if(kind==='buy'){const pl=G.players[seat];return pl.money-payload.price>=1000;}
   return null;
@@ -330,7 +353,24 @@ function showInputUI(kind,payload,cb){
   if(kind==='roll'){setAction(`<button class="roll-btn" id="rb">Roll dice ✈</button>`);document.getElementById('rb').onclick=()=>{setAction('');cb(true);};return;}
   if(kind==='answer'){showQuestion(payload,cb);return;}
   if(kind==='buy'){showBuy(payload,cb);return;}
+  if(kind==='card'){showCard(payload,cb);return;}
 }
+function applyCard(seat,card){
+  const pl=G.players[seat];
+  if(card.type==='gain'||card.type==='start'){pl.money+=card.amount;pushLog(`<b>${escapeHtml(pl.name)}</b>: ${escapeHtml(card.text)}`);}
+  else if(card.type==='lose'){applyPay(seat,card.amount,null);pushLog(`<b>${escapeHtml(pl.name)}</b>: ${escapeHtml(card.text)}`);}
+  else if(card.type==='each_gain'){G.players.forEach((o,idx)=>{if(idx!==seat&&o.alive)applyPay(idx,card.amount,seat);});pushLog(`<b>${escapeHtml(pl.name)}</b>: ${escapeHtml(card.text)}`);}
+  else if(card.type==='each_lose'){G.players.forEach((o,idx)=>{if(idx!==seat&&o.alive)applyPay(seat,card.amount,idx);});pushLog(`<b>${escapeHtml(pl.name)}</b>: ${escapeHtml(card.text)}`);}
+  else if(card.type==='skip'){pl.skip=(pl.skip||0)+1;pushLog(`<b>${escapeHtml(pl.name)}</b>: ${escapeHtml(card.text)}`);}
+}
+function cardModalHtml(payload){
+  const isEmail=payload.channel==='email'||payload.channel==='E-mail';
+  const band=isEmail?'var(--ink)':'var(--red)';const title=isEmail?'✉ E-mail':'✆ SMS';
+  return `<div class="modal-band" style="background:${band}"><span class="mt">${title}</span></div>
+    <div class="modal-body"><p class="q-sent" style="font-size:16px;font-weight:500;text-align:center">${escapeHtml(payload.text)}</p>
+    <button class="mbtn" style="width:100%" id="cardok">Continue</button></div>`;
+}
+function showCard(payload,cb){const m=document.getElementById('modal');m.innerHTML=cardModalHtml(payload);openModal();document.getElementById('cardok').onclick=()=>{closeModal();cb(true);};}
 function showQuestion(payload,cb){
   const {q,total}=payload;
   const m=document.getElementById('modal');
@@ -387,10 +427,17 @@ async function handleLanding(seat){
   const pl=G.players[seat],i=pl.pos,cell=CELLS[i];
   if(cell.t==='special'){
     if(cell.key==='goto'){pl.pos=10;pl.skip=1;pushLog(`<b>${pl.name}</b> is sent to Deported — loses next turn.`);pushState();await wait(900);return;}
+    if(cell.key==='deported'){pl.skip=(pl.skip||0)+1;pushLog(`<b>${pl.name}</b> got deported — loses next turn.`);pushState();await wait(700);return;}
+    if(cell.key==='oceania'){pl.money+=1500;pushLog(`<b>${pl.name}</b> relaxes in Oceania — bonus +$1,500.`);pushState();await wait(600);return;}
     pushLog(`<b>${pl.name}</b> rests at ${SPECIALS[cell.key].title}.`);pushState();await wait(450);return;
   }
   if(cell.t==='tax'){applyPay(seat,cell.amount,null);pushLog(`<b>${pl.name}</b> paid ${cell.name} ${money(cell.amount)}.`);pushState();await wait(650);return;}
-  if(cell.t==='card'){pl.money+=1000;pushLog(`<b>${pl.name}</b> got a ${cell.kind==='email'?'E-mail':'SMS'} bonus (+$1,000).`);pushState();await wait(550);return;}
+  if(cell.t==='card'){
+    const deck=cell.kind==='email'?EMAIL_CARDS:SMS_CARDS;const card=deck[rnd(deck.length)];
+    const channel=cell.kind==='email'?'E-mail':'SMS';
+    G.activeCard={channel,text:card.text,who:pl.name};pushState();
+    await requestInput('card',seat,{channel,text:card.text});
+    G.activeCard=null;applyCard(seat,card);pushState();await wait(450);return;}
   const owner=G.owners[i];
   if(owner==null){
     if(pl.money>=cell.price){const buy=await requestInput('buy',seat,{i,price:cell.price});
@@ -407,7 +454,7 @@ function showWinner(name,color){const m=document.getElementById('modal');m.inner
 
 /* start engine (host or local) */
 function startEngine(seatsCfg,level,aiDiff){
-  G={level,aiAcc:AIDIFF[aiDiff]||.72,pool:buildPool(level),owners:Array(40).fill(null),players:[],cur:0,dice:[0,0],log:[],activeQ:null,over:false};
+  G={level,aiAcc:AIDIFF[aiDiff]||.72,pool:buildPool(level),owners:Array(40).fill(null),players:[],cur:0,dice:[0,0],log:[],activeQ:null,activeCard:null,over:false};
   seatsCfg.forEach((s,idx)=>{G.players.push({name:s.name||('Player '+(idx+1)),color:PCOLORS[idx],pos:0,money:10000,alive:true,skip:0,type:s.type,conn:s.conn||null});});
   hideScreen();pushLog(`Game start · ${G.players.length} players · ${level} questions.`);pushState();
   if(isOnline)broadcast({t:'start'});
@@ -427,7 +474,9 @@ function clientHandleReq(kind,payload){
   if(kind==='roll'){setAction(`<button class="roll-btn" id="rb">Roll dice ✈</button>`);document.getElementById('rb').onclick=()=>{setAction('<span class="waiting">Rolling…</span>');clientBusy=false;send(myConn,{t:'res',kind:'roll',value:true});};return;}
   if(kind==='answer'){showQuestionClient(payload,choice=>{clientBusy=false;send(myConn,{t:'res',kind:'answer',value:choice});});return;}
   if(kind==='buy'){showBuyClient(payload,val=>{clientBusy=false;send(myConn,{t:'res',kind:'buy',value:val});});return;}
+  if(kind==='card'){showCardClient(payload,()=>{clientBusy=false;send(myConn,{t:'res',kind:'card',value:true});});return;}
 }
+function showCardClient(payload,cb){const m=document.getElementById('modal');m.innerHTML=cardModalHtml(payload);openModal();document.getElementById('cardok').onclick=()=>{closeModal();cb(true);};}
 function showQuestionClient(payload,cb){
   const {q,total}=payload;
   const m=document.getElementById('modal');
@@ -523,8 +572,11 @@ function menuHost(){
   document.getElementById('back').onclick=menuMain;
   document.getElementById('go').onclick=()=>{const hn=document.getElementById('hostName').value.trim()||'Host';createRoom(hn,aiCount);};
 }
+const ROOM_PREFIX='wtour-';
+let displayCode='';
+function genCode(){return ''+Math.floor(10000+Math.random()*90000);}
 function createRoom(hostName,aiCount){
-  roomId='WT-'+Math.random().toString(36).slice(2,7).toUpperCase();
+  displayCode=genCode();roomId=ROOM_PREFIX+displayCode;
   isOnline=true;ROLE='host';
   // seats: 0 = host(human local); then humans=remote until count; remaining = ai
   const total=cfgCount,humanRemote=total-aiCount-1;
@@ -534,7 +586,7 @@ function createRoom(hostName,aiCount){
   conns=[];
   peer=new Peer(roomId,{debug:1});
   peer.on('open',()=>lobbyHost());
-  peer.on('error',e=>{if((''+e).includes('unavailable')){roomId='WT-'+Math.random().toString(36).slice(2,7).toUpperCase();peer=new Peer(roomId);peer.on('open',()=>lobbyHost());peer.on('connection',hostOnConn);}else{document.getElementById('herr')&&(document.getElementById('herr').textContent='Network error: '+e);}});
+  peer.on('error',e=>{if((''+e).includes('unavailable')){displayCode=genCode();roomId=ROOM_PREFIX+displayCode;peer=new Peer(roomId);peer.on('open',()=>lobbyHost());peer.on('connection',hostOnConn);}else{document.getElementById('herr')&&(document.getElementById('herr').textContent='Network error: '+e);}});
   peer.on('connection',hostOnConn);
 }
 function hostOnConn(conn){
@@ -552,7 +604,7 @@ function lobbyHost(){
   const filledRemote=hostSeats.filter(s=>s.type==='remote'&&s.filled).length;
   const needRemote=hostSeats.filter(s=>s.type==='remote').length;
   showScreen(`<h2>Room ready</h2><p class="sub">Share this code. Players open the same page → “Join online game”.</p>
-    <div class="codebox">${roomId}</div>
+    <div class="codebox">${displayCode}</div>
     <p class="sub" style="margin:8px 0">${cfgLevel} questions · ${cfgDiff} CPU</p>
     <ul class="lobby-list">${hostSeats.map((s,i)=>`<li><span class="pdisc" style="background:${PCOLORS[i]}">✈</span> ${escapeHtml(s.name)} <span class="tagk" style="margin-left:auto;font-family:Space Mono,monospace;font-size:10px;color:#7a6a44">${s.type==='ai'?'CPU':(s.type==='remote'?(s.filled?'online ✓':'waiting…'):'host')}</span></li>`).join('')}</ul>
     <button class="go-btn" id="go">Start game ✈ ${needRemote>0?`(${filledRemote}/${needRemote} joined)`:''}</button>
@@ -567,20 +619,20 @@ function lobbyHost(){
 function menuJoin(){
   if(typeof Peer==='undefined'){showScreen(`<h2>Online unavailable</h2><p class="sub">The networking library didn't load. Check your connection.</p><span class="link" id="back">← Back</span>`);document.getElementById('back').onclick=menuMain;return;}
   showScreen(`<h2>Join online</h2><p class="sub">Enter the room code from the host and your name.</p>
-    <div class="field"><label>Room code</label><input type="text" id="code" class="codeinput" placeholder="WT-XXXXX" maxlength="9"></div>
+    <div class="field"><label>Room code</label><input type="text" id="code" class="codeinput" inputmode="numeric" placeholder="12345" maxlength="5"></div>
     <div class="field"><label>Your name</label><input type="text" id="jname" class="codeinput" style="font-size:15px;text-transform:none;letter-spacing:0" maxlength="14" placeholder="Your name"></div>
     <button class="go-btn" id="go">Join →</button>
     <span class="link" id="back">← Back</span><div class="err" id="jerr"></div>`);
   document.getElementById('back').onclick=menuMain;
-  document.getElementById('go').onclick=()=>{const code=document.getElementById('code').value.trim().toUpperCase();const nm=document.getElementById('jname').value.trim()||'Player';
-    if(!code){document.getElementById('jerr').textContent='Enter a code.';return;}joinRoom(code,nm);};
+  document.getElementById('go').onclick=()=>{const code=document.getElementById('code').value.replace(/\D/g,'').slice(0,5);const nm=document.getElementById('jname').value.trim()||'Player';
+    if(code.length!==5){document.getElementById('jerr').textContent='Enter the 5-digit code.';return;}joinRoom(code,nm);};
 }
 function joinRoom(code,name){
   ROLE='client';isOnline=true;
   showScreen(`<h2>Connecting…</h2><p class="sub">Joining room ${escapeHtml(code)}…</p><div class="err" id="jerr"></div><span class="link" id="back">← Cancel</span>`);
   document.getElementById('back').onclick=()=>location.reload();
   peer=new Peer({debug:1});
-  peer.on('open',()=>{myConn=peer.connect(code,{reliable:true});
+  peer.on('open',()=>{myConn=peer.connect(ROOM_PREFIX+code,{reliable:true});
     myConn.on('open',()=>{myConn.send({t:'hello',name});});
     myConn.on('data',onHostData);
     myConn.on('close',()=>{const e=document.getElementById('jerr');if(e)e.textContent='Connection closed.';});
