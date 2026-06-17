@@ -142,9 +142,13 @@
   .err{color:var(--red);font-size:12.5px;text-align:center;margin-top:8px;min-height:14px}
   .host-skip{display:none;position:fixed;right:14px;bottom:14px;z-index:70;background:var(--red);color:#fff;border:0;border-radius:10px;padding:11px 16px;font-family:"Space Mono",monospace;font-weight:700;font-size:12px;letter-spacing:.04em;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.38)}
   .host-skip:hover{filter:brightness(1.07)}
+  .rtable{width:100%;border-collapse:collapse;margin:6px 0 4px;font-size:13px}
+  .rtable th{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--red);text-align:center;padding:6px 4px;border-bottom:2px solid var(--line)}
+  .rtable th:nth-child(2){text-align:left}
+  .rtable td{padding:7px 4px;border-bottom:1px dashed var(--line);vertical-align:middle}
+  .rtable td .pdisc{display:inline-flex;vertical-align:middle;margin-right:4px}
 </style>
 </head>
-  <script src="https://manveru-ainu.github.io/ManveruGames/manveru-credit.js"></script>
 <body>
 <div class="wrap">
   <h1 class="title">World Tourist</h1>
@@ -300,6 +304,18 @@ function renderView(v){
 /* ============ HOST ENGINE ============ */
 let G=null, ROLE='host', isOnline=false;
 let peer=null, conns=[], myConn=null, mySeat=null, roomId=null;
+// ===== Connectivity (helps connections succeed across different networks / cellular) =====
+// STUN (free, reliable) + a public TURN relay as a best-effort fallback.
+// For maximum class reliability, replace the TURN entries below with your own
+// (e.g., a free key from metered.ca / Twilio). Only the TURN lines need changing.
+const ICE_SERVERS=[
+  {urls:'stun:stun.l.google.com:19302'},
+  {urls:'stun:stun1.l.google.com:19302'},
+  {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
+  {urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},
+  {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
+];
+const PEER_OPTS={debug:1,config:{iceServers:ICE_SERVERS}};
 let inputResolver=null,inputKind=null,inputSeat=null,inputPayload=null;
 
 function buildPool(level){let arr=[];if(level==='Mixed'){Object.values(QUESTIONS).forEach(a=>arr=arr.concat(a));}else arr=QUESTIONS[level].slice();for(let i=arr.length-1;i>0;i--){const j=rnd(i+1);[arr[i],arr[j]]=[arr[j],arr[i]];}return arr;}
@@ -413,6 +429,8 @@ async function runTurn(){
   // answer a question to advance
   const q=drawQ();G.activeQ={lvl:q.lvl,sec:q.sec,q:q.q,who:pl.name};pushState();
   const choice=await requestInput('answer',seat,{q,mode:'advance',total});const ok=choice===q.a;G.activeQ=null;
+  pl.answered=(pl.answered||0)+1;if(ok)pl.correct=(pl.correct||0)+1;
+  {const band=(q.lvl||'')[0];if('ABC'.indexOf(band)>=0){pl.byBand=pl.byBand||{};pl.byBand[band]=pl.byBand[band]||{a:0,c:0};pl.byBand[band].a++;if(ok)pl.byBand[band].c++;}}
   if(!ok){pushLog(`<b>${pl.name}</b> answered wrong and stays put.`);pushState();await wait(600);advance();if(G.over)finish();else runTurn();return;}
   pushLog(`<b>${pl.name}</b> answered correctly and flies ${total}.`);pushState();await wait(200);
   await animateMove(seat,total);
@@ -449,14 +467,90 @@ async function handleLanding(seat){
   if(owner===seat){pushLog(`<b>${pl.name}</b> rests on their own ${cell.name}.`);pushState();await wait(450);return;}
   const rent=rentFor(i);applyPay(seat,rent,owner);pushLog(`<b>${pl.name}</b> paid rent ${money(rent)} to <b>${G.players[owner].name}</b>.`);pushState();await wait(500);
 }
-function finish(){const w=G.players.find(p=>p.alive)||G.players.slice().sort((a,b)=>b.money-a.money)[0];
-  pushState();if(isOnline)broadcast({t:'over',winnerName:w.name,winnerColor:w.color});showWinner(w.name,w.color);}
-function showWinner(name,color){const m=document.getElementById('modal');m.innerHTML=`<div class="modal-band" style="background:${color}"><span class="mt">🏆 ${escapeHtml(name)} wins!</span></div><div class="modal-body"><p class="q-sent" style="text-align:center">${escapeHtml(name)} is the World Tourist champion!</p><button class="mbtn" style="width:100%" onclick="location.reload()">Play again</button></div>`;openModal();}
+/* ===== assessment: results, persistence, export ===== */
+let MEM_SESSIONS=null;
+function loadStore(){try{const s=localStorage.getItem('wt_sessions');return s?JSON.parse(s):[];}catch(e){return MEM_SESSIONS||[];}}
+function saveStore(arr){try{localStorage.setItem('wt_sessions',JSON.stringify(arr));}catch(e){MEM_SESSIONS=arr;}}
+function computeResults(){
+  const winnerIdx=(()=>{let best=-1,bm=-1;G.players.forEach((p,i)=>{if(p.alive&&p.money>bm){bm=p.money;best=i;}});if(best<0){G.players.forEach((p,i)=>{if(p.money>bm){bm=p.money;best=i;}});}return best;})();
+  return G.players.map((p,i)=>{const acc=p.answered?p.correct/p.answered:0;
+    return {name:p.name,type:p.type,color:p.color,answered:p.answered||0,correct:p.correct||0,
+      accuracy:Math.round(acc*100),grade:p.answered?Math.round(acc*1000)/100:0,money:p.money,
+      winner:i===winnerIdx,byBand:p.byBand||{}};});
+}
+function persistSession(results,level){
+  const rec={date:Date.now(),level,players:results.map(r=>({name:r.name,type:r.type,answered:r.answered,correct:r.correct,accuracy:r.accuracy,grade:r.grade,money:r.money,winner:r.winner}))};
+  const all=loadStore();all.push(rec);if(all.length>300)all.splice(0,all.length-300);saveStore(all);
+}
+function download(filename,text,mime){try{const blob=new Blob([text],{type:mime||'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},600);}catch(e){alert('Download is not available in this preview — use your published page.');}}
+function csvEscape(v){v=''+v;return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
+function sessionsToCSV(sessions){
+  const rows=[['date','level','player','type','answered','correct','accuracy_%','grade_/10','money','winner']];
+  sessions.forEach(s=>{const d=new Date(s.date).toLocaleString();s.players.forEach(p=>{rows.push([d,s.level,p.name,p.type,p.answered,p.correct,p.accuracy,p.grade,p.money,p.winner?'yes':'']);});});
+  return rows.map(r=>r.map(csvEscape).join(',')).join('\n');
+}
+function finish(){
+  const results=computeResults();const level=G.level;
+  const w=results.find(r=>r.winner)||results[0];
+  persistSession(results,level);
+  pushState();if(isOnline)broadcast({t:'over',results,level,winnerName:w?w.name:''});
+  showResults(results,level,w?w.name:'');
+}
+function gradeColor(g){return g>=8?'#2f6b3f':(g>=6?'#c08a2d':'#b23a2e');}
+function showResults(results,level,winnerName){
+  const ranked=results.slice().sort((a,b)=>b.grade-a.grade||b.correct-a.correct);
+  const rows=ranked.map((r,i)=>`<tr>
+    <td style="text-align:center;font-family:'Space Mono',monospace">${i+1}</td>
+    <td><span class="pdisc" style="width:18px;height:18px;font-size:10px;background:${r.color}">✈</span> ${escapeHtml(r.name)}${r.winner?' 🏆':''}${r.type==='ai'?' <span class="tagk" style="font-family:Space Mono,monospace;font-size:9px;color:#7a6a44">CPU</span>':''}</td>
+    <td style="text-align:center;font-family:'Space Mono',monospace">${r.correct}/${r.answered}</td>
+    <td style="text-align:center;font-family:'Space Mono',monospace">${r.accuracy}%</td>
+    <td style="text-align:center;font-family:'Space Mono',monospace;font-weight:700;color:${gradeColor(r.grade)}">${r.grade.toFixed(1)}</td>
+  </tr>`).join('');
+  showScreen(`<div class="glob">📊</div><h2>Results</h2><p class="sub">${escapeHtml(level)} · winner: ${escapeHtml(winnerName||'—')}</p>
+    <table class="rtable"><thead><tr><th>#</th><th>Player</th><th>Correct</th><th>Accuracy</th><th>Grade</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="note">Grade = % of questions answered correctly, on a 0–10 scale.</p>
+    <div class="bigbtns" style="margin-top:6px">
+      <button class="go-btn" id="rDl" style="background:var(--ink)">⬇ Download this session (CSV)</button>
+      ${ROLE!=='client'?'<button class="go-btn" id="rRec" style="background:#5c6b7a">📚 View all saved records</button>':''}
+      <button class="go-btn" id="rAgain">Play again ✈</button>
+    </div>
+    <p class="note" id="saveNote"></p>`);
+  document.getElementById('rDl').onclick=()=>download('world-tourist_'+new Date().toISOString().slice(0,10)+'.csv',sessionsToCSV([{date:Date.now(),level,players:results}]),'text/csv;charset=utf-8');
+  const recBtn=document.getElementById('rRec');if(recBtn)recBtn.onclick=showRecords;
+  document.getElementById('rAgain').onclick=()=>location.reload();
+  const note=document.getElementById('saveNote');
+  if(ROLE==='client'){note.textContent='Your grade is also recorded on the host\'s device.';}
+  else{let saved=false;try{localStorage.getItem('wt_sessions');saved=true;}catch(e){}
+    note.textContent=saved?'✔ Saved to this device — review it later in Records.':'⚠ This preview can\'t save permanently; on your published page it saves automatically.';}
+}
+function showRecords(){
+  const sessions=loadStore();
+  if(!sessions.length){showScreen(`<div class="glob">📚</div><h2>Saved records</h2><p class="sub">No sessions saved yet on this device.</p><span class="link" id="back">← Back</span>`);document.getElementById('back').onclick=menuMain;return;}
+  // aggregate per student
+  const agg={};sessions.forEach(s=>s.players.forEach(p=>{if(p.type==='ai')return;const k=p.name;agg[k]=agg[k]||{name:p.name,sessions:0,answered:0,correct:0};agg[k].sessions++;agg[k].answered+=p.answered;agg[k].correct+=p.correct;}));
+  const aggRows=Object.values(agg).sort((a,b)=>a.name.localeCompare(b.name)).map(a=>{const acc=a.answered?a.correct/a.answered:0;const g=a.answered?(acc*10):0;
+    return `<tr><td>${escapeHtml(a.name)}</td><td style="text-align:center;font-family:'Space Mono',monospace">${a.sessions}</td><td style="text-align:center;font-family:'Space Mono',monospace">${a.correct}/${a.answered}</td><td style="text-align:center;font-family:'Space Mono',monospace;font-weight:700;color:${gradeColor(g)}">${g.toFixed(1)}</td></tr>`;}).join('');
+  const sessList=sessions.slice().reverse().map(s=>{const d=new Date(s.date).toLocaleString();const ppl=s.players.filter(p=>p.type!=='ai').length;return `<li><span>${d}</span><span style="margin-left:auto;font-family:Space Mono,monospace;font-size:11px;color:#7a6a44">${escapeHtml(s.level)} · ${ppl}p</span></li>`;}).join('');
+  showScreen(`<div class="glob">📚</div><h2>Saved records</h2><p class="sub">${sessions.length} session${sessions.length>1?'s':''} on this device · grades averaged per student.</p>
+    <table class="rtable"><thead><tr><th>Student</th><th>Sessions</th><th>Correct</th><th>Avg grade</th></tr></thead><tbody>${aggRows}</tbody></table>
+    <p class="note" style="text-align:left;margin-top:14px"><b>Sessions</b></p>
+    <ul class="lobby-list" style="max-height:140px;overflow:auto">${sessList}</ul>
+    <div class="bigbtns" style="margin-top:6px">
+      <button class="go-btn" id="dCsv" style="background:var(--ink)">⬇ Download all (CSV)</button>
+      <button class="go-btn" id="dJson" style="background:#5c6b7a">⬇ Backup all (JSON)</button>
+      <button class="go-btn" id="clr" style="background:var(--red)">🗑 Clear all records</button>
+    </div>
+    <span class="link" id="back">← Back to menu</span>`);
+  document.getElementById('dCsv').onclick=()=>download('world-tourist_all_'+new Date().toISOString().slice(0,10)+'.csv',sessionsToCSV(sessions),'text/csv;charset=utf-8');
+  document.getElementById('dJson').onclick=()=>download('world-tourist_backup_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(sessions,null,2),'application/json');
+  document.getElementById('clr').onclick=()=>{if(confirm('Delete ALL saved records on this device? This cannot be undone.')){saveStore([]);MEM_SESSIONS=[];showRecords();}};
+  document.getElementById('back').onclick=menuMain;
+}
 
 /* start engine (host or local) */
 function startEngine(seatsCfg,level,aiDiff){
   G={level,aiAcc:AIDIFF[aiDiff]||.72,pool:buildPool(level),owners:Array(40).fill(null),players:[],cur:0,dice:[0,0],log:[],activeQ:null,activeCard:null,over:false};
-  seatsCfg.forEach((s,idx)=>{G.players.push({name:s.name||('Player '+(idx+1)),color:PCOLORS[idx],pos:0,money:10000,alive:true,skip:0,type:s.type,conn:s.conn||null});});
+  seatsCfg.forEach((s,idx)=>{G.players.push({name:s.name||('Player '+(idx+1)),color:PCOLORS[idx],pos:0,money:10000,alive:true,skip:0,type:s.type,conn:s.conn||null,answered:0,correct:0,byBand:{}});});
   hideScreen();pushLog(`Game start · ${G.players.length} players · ${level} questions.`);pushState();
   if(isOnline)broadcast({t:'start'});
   runTurn();
@@ -522,10 +616,12 @@ function menuMain(){
       <button class="bigbtn" id="mLocal"><span class="em">🎮</span><span>Same device<small>Pass &amp; play, or play vs the computer (AI)</small></span></button>
       <button class="bigbtn" id="mHost"><span class="em">📡</span><span>Host online game<small>Create a room — friends join from their devices</small></span></button>
       <button class="bigbtn" id="mJoin"><span class="em">🔗</span><span>Join online game<small>Enter a room code from the host</small></span></button>
+      <button class="bigbtn" id="mRec"><span class="em">📊</span><span>Grades &amp; records<small>Review saved sessions and student progress</small></span></button>
     </div>`);
   document.getElementById('mLocal').onclick=menuLocal;
   document.getElementById('mHost').onclick=menuHost;
   document.getElementById('mJoin').onclick=menuJoin;
+  document.getElementById('mRec').onclick=showRecords;
 }
 let cfgCount=2,cfgLevel='A1-A2',cfgDiff='Medium',cfgTypes=['human','ai','ai','ai','ai','ai'];
 function levelSeg(id){return `<div class="seg" id="${id}">`+['A1-A2','B1-B2','C1-C2','Mixed'].map(l=>`<button data-v="${l}" class="${l===cfgLevel?'on':''}">${l}</button>`).join('')+`</div>`;}
@@ -585,9 +681,9 @@ function createRoom(hostName,aiCount){
   for(let i=0;i<humanRemote;i++)hostSeats.push({name:'Waiting…',type:'remote',conn:null,filled:false});
   for(let i=0;i<aiCount;i++)hostSeats.push({name:'Computer',type:'ai',conn:null,filled:true});
   conns=[];
-  peer=new Peer(roomId,{debug:1});
+  peer=new Peer(roomId,PEER_OPTS);
   peer.on('open',()=>lobbyHost());
-  peer.on('error',e=>{if((''+e).includes('unavailable')){displayCode=genCode();roomId=ROOM_PREFIX+displayCode;peer=new Peer(roomId);peer.on('open',()=>lobbyHost());peer.on('connection',hostOnConn);}else{document.getElementById('herr')&&(document.getElementById('herr').textContent='Network error: '+e);}});
+  peer.on('error',e=>{if((''+e).includes('unavailable')){displayCode=genCode();roomId=ROOM_PREFIX+displayCode;peer=new Peer(roomId,PEER_OPTS);peer.on('open',()=>lobbyHost());peer.on('connection',hostOnConn);}else{document.getElementById('herr')&&(document.getElementById('herr').textContent='Network error: '+e);}});
   peer.on('connection',hostOnConn);
 }
 function hostOnConn(conn){
@@ -632,7 +728,7 @@ function joinRoom(code,name){
   ROLE='client';isOnline=true;
   showScreen(`<h2>Connecting…</h2><p class="sub">Joining room ${escapeHtml(code)}…</p><div class="err" id="jerr"></div><span class="link" id="back">← Cancel</span>`);
   document.getElementById('back').onclick=()=>location.reload();
-  peer=new Peer({debug:1});
+  peer=new Peer(PEER_OPTS);
   peer.on('open',()=>{myConn=peer.connect(ROOM_PREFIX+code,{reliable:true});
     myConn.on('open',()=>{myConn.send({t:'hello',name});});
     myConn.on('data',onHostData);
@@ -648,7 +744,7 @@ function onHostData(d){
   else if(d.t==='start'){hideScreen();}
   else if(d.t==='view'){if(screen.style.display!=='none')hideScreen();clientRender(d.view);}
   else if(d.t==='req'){if(d.seat===mySeat)clientHandleReq(d.kind,d.payload);}
-  else if(d.t==='over'){showWinner(d.winnerName,d.winnerColor);}
+  else if(d.t==='over'){showResults(d.results||[],d.level||'',d.winnerName||'');}
 }
 function lobbyClient(d){
   showScreen(`<h2>You're in!</h2><p class="sub">${d.level} questions · waiting for the host to start.</p>
