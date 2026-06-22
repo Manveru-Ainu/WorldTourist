@@ -469,6 +469,15 @@ async function handleLanding(seat){
 }
 /* ===== assessment: results, persistence, export ===== */
 let MEM_SESSIONS=null;
+// ===== Optional shared backend (Google Sheets) =====
+// Paste your Apps Script Web App URL between the quotes to also send every
+// finished session to a Google Sheet (review from any device). Leave empty to
+// keep results on this device only. See setup steps shared in chat.
+const SHEET_URL='';
+function postToSheet(rec){
+  if(!SHEET_URL)return;
+  try{fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(rec)});}catch(e){}
+}
 function loadStore(){try{const s=localStorage.getItem('wt_sessions');return s?JSON.parse(s):[];}catch(e){return MEM_SESSIONS||[];}}
 function saveStore(arr){try{localStorage.setItem('wt_sessions',JSON.stringify(arr));}catch(e){MEM_SESSIONS=arr;}}
 function computeResults(){
@@ -481,6 +490,7 @@ function computeResults(){
 function persistSession(results,level){
   const rec={date:Date.now(),level,players:results.map(r=>({name:r.name,type:r.type,answered:r.answered,correct:r.correct,accuracy:r.accuracy,grade:r.grade,money:r.money,winner:r.winner}))};
   const all=loadStore();all.push(rec);if(all.length>300)all.splice(0,all.length-300);saveStore(all);
+  postToSheet(rec);
 }
 function download(filename,text,mime){try{const blob=new Blob([text],{type:mime||'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},600);}catch(e){alert('Download is not available in this preview — use your published page.');}}
 function csvEscape(v){v=''+v;return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
@@ -490,6 +500,7 @@ function sessionsToCSV(sessions){
   return rows.map(r=>r.map(csvEscape).join(',')).join('\n');
 }
 function finish(){
+  disarmExit();
   const results=computeResults();const level=G.level;
   const w=results.find(r=>r.winner)||results[0];
   persistSession(results,level);
@@ -552,6 +563,7 @@ function startEngine(seatsCfg,level,aiDiff){
   G={level,aiAcc:AIDIFF[aiDiff]||.72,pool:buildPool(level),owners:Array(40).fill(null),players:[],cur:0,dice:[0,0],log:[],activeQ:null,activeCard:null,over:false};
   seatsCfg.forEach((s,idx)=>{G.players.push({name:s.name||('Player '+(idx+1)),color:PCOLORS[idx],pos:0,money:10000,alive:true,skip:0,type:s.type,conn:s.conn||null,answered:0,correct:0,byBand:{}});});
   hideScreen();pushLog(`Game start · ${G.players.length} players · ${level} questions.`);pushState();
+  armExit();
   if(isOnline)broadcast({t:'start'});
   runTurn();
 }
@@ -741,10 +753,10 @@ function onHostData(d){
   if(d.t==='seat'){mySeat=d.seat;}
   else if(d.t==='full'){showScreen(`<h2>Room full</h2><p class="sub">All online seats are taken.</p><span class="link" onclick="location.reload()">← Back</span>`);}
   else if(d.t==='lobby'){lobbyClient(d);}
-  else if(d.t==='start'){hideScreen();}
+  else if(d.t==='start'){hideScreen();armExit();}
   else if(d.t==='view'){if(screen.style.display!=='none')hideScreen();clientRender(d.view);}
   else if(d.t==='req'){if(d.seat===mySeat)clientHandleReq(d.kind,d.payload);}
-  else if(d.t==='over'){showResults(d.results||[],d.level||'',d.winnerName||'');}
+  else if(d.t==='over'){disarmExit();showResults(d.results||[],d.level||'',d.winnerName||'');}
 }
 function lobbyClient(d){
   showScreen(`<h2>You're in!</h2><p class="sub">${d.level} questions · waiting for the host to start.</p>
@@ -753,6 +765,14 @@ function lobbyClient(d){
 }
 
 /* boot */
+// prevent leaving an in-progress game by accident
+let gameActive=false;
+function armExit(){gameActive=true;try{history.pushState({wtTrap:1},'');}catch(e){}}
+function disarmExit(){gameActive=false;}
+window.addEventListener('beforeunload',function(e){if(gameActive){e.preventDefault();e.returnValue='';}});
+window.addEventListener('popstate',function(){if(!gameActive)return;
+  if(confirm('¿Salir del juego? Se perderá la partida en curso.')){gameActive=false;location.reload();}
+  else{try{history.pushState({wtTrap:1},'');}catch(e){}}});
 buildBoard();
 const _hs=document.getElementById('hostSkip');if(_hs)_hs.onclick=hostForceCPU;
 document.getElementById('roomline').textContent='';
