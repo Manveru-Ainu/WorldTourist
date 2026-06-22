@@ -211,10 +211,10 @@ const CELLS = [
   {t:'tax', name:'Luxury Tax', icon:'🧾', amount:2000, desc:'Pay $2,000 to the bank.'},
   {t:'prop', name:'United States', group:'azul', price:8000},
 ];
-// variant economy: double every property / airline / utility price
-CELLS.forEach(c=>{if(c.t==='prop'||c.t==='air'||c.t==='serv')c.price*=2;});
+// variant economy: property/airline/utility prices = base ×3 (doubled, then +50%)
+CELLS.forEach(c=>{if(c.t==='prop'||c.t==='air'||c.t==='serv')c.price*=3;});
 const COLORS={cafe:'var(--g-cafe)',celeste:'var(--g-celeste)',rosa:'var(--g-rosa)',naranja:'var(--g-naranja)',rojo:'var(--g-rojo)',amarillo:'var(--g-amarillo)',verde:'var(--g-verde)',azul:'var(--g-azul)',aerea:'var(--g-aerea)',serv:'var(--g-serv)'};
-const SPECIALS={start:{icon:'➡️',title:'Start',sub:'+$2,000'},deported:{icon:'🧳',title:'Deported',sub:'Lose a turn'},oceania:{icon:'🏝️',title:'Oceania',sub:'+$1,500'},goto:{icon:'🚓',title:'Go to Deported!',sub:'Go to jail'}};
+const SPECIALS={start:{icon:'➡️',title:'Start',sub:'+$1,000'},deported:{icon:'🧳',title:'Deported',sub:'Lose a turn'},oceania:{icon:'🏝️',title:'Oceania',sub:'+$1,500'},goto:{icon:'🚓',title:'Go to Deported!',sub:'Go to jail'}};
 const PCOLORS=['#cc3b35','#2f4a8c','#3f9d5f','#e08a2e','#7d4f9c','#1aa6a6'];
 const AIDIFF={Easy:.5,Medium:.72,Hard:.9};
 const EMAIL_CARDS=[
@@ -440,7 +440,7 @@ async function runTurn(){
   if(G.over)finish();else runTurn();
 }
 function advance(){const alive=G.players.filter(p=>p.alive);if(alive.length<=1){G.over=true;return;}do{G.cur=(G.cur+1)%G.players.length;}while(!G.players[G.cur].alive);}
-function animateMove(seat,steps){return new Promise(res=>{let left=steps;const iv=setInterval(()=>{const pl=G.players[seat];pl.pos=(pl.pos+1)%40;if(pl.pos===0){pl.money+=2000;pushLog(`<b>${pl.name}</b> passed Start (+$2,000).`);}left--;pushState();if(left<=0){clearInterval(iv);res();}},140);});}
+function animateMove(seat,steps){return new Promise(res=>{let left=steps;const iv=setInterval(()=>{const pl=G.players[seat];pl.pos=(pl.pos+1)%40;if(pl.pos===0){pl.money+=1000;pushLog(`<b>${pl.name}</b> passed Start (+$1,000).`);}left--;pushState();if(left<=0){clearInterval(iv);res();}},140);});}
 
 async function handleLanding(seat){
   const pl=G.players[seat],i=pl.pos,cell=CELLS[i];
@@ -561,7 +561,7 @@ function showRecords(){
 /* start engine (host or local) */
 function startEngine(seatsCfg,level,aiDiff){
   G={level,aiAcc:AIDIFF[aiDiff]||.72,pool:buildPool(level),owners:Array(40).fill(null),players:[],cur:0,dice:[0,0],log:[],activeQ:null,activeCard:null,over:false};
-  seatsCfg.forEach((s,idx)=>{G.players.push({name:s.name||('Player '+(idx+1)),color:PCOLORS[idx],pos:0,money:10000,alive:true,skip:0,type:s.type,conn:s.conn||null,answered:0,correct:0,byBand:{}});});
+  seatsCfg.forEach((s,idx)=>{G.players.push({name:s.name||('Player '+(idx+1)),color:PCOLORS[idx],pos:0,money:5000,alive:true,skip:0,type:s.type,conn:s.conn||null,answered:0,correct:0,byBand:{}});});
   hideScreen();pushLog(`Game start · ${G.players.length} players · ${level} questions.`);pushState();
   armExit();
   if(isOnline)broadcast({t:'start'});
