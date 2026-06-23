@@ -623,6 +623,7 @@ function hideScreen(){screen.style.display='none';}
 function showScreen(html){screen.style.display='flex';screen.innerHTML=`<div class="card2">${html}</div>`;}
 
 function menuMain(){
+  if(typeof disarmExit==='function')disarmExit();
   showScreen(`<div class="glob">🌍✈️</div><h2>World Tourist</h2><p class="sub">Fly around the world and answer English questions to claim countries.</p>
     <div class="bigbtns">
       <button class="bigbtn" id="mLocal"><span class="em">🎮</span><span>Same device<small>Pass &amp; play, or play vs the computer (AI)</small></span></button>
@@ -686,7 +687,7 @@ let displayCode='';
 function genCode(){return ''+Math.floor(10000+Math.random()*90000);}
 function createRoom(hostName,aiCount){
   displayCode=genCode();roomId=ROOM_PREFIX+displayCode;
-  isOnline=true;ROLE='host';
+  isOnline=true;ROLE='host';armExit();
   // seats: 0 = host(human local); then humans=remote until count; remaining = ai
   const total=cfgCount,humanRemote=total-aiCount-1;
   hostSeats=[{name:hostName,type:'human',conn:null,filled:true}];
@@ -737,7 +738,7 @@ function menuJoin(){
     if(code.length!==5){document.getElementById('jerr').textContent='Enter the 5-digit code.';return;}joinRoom(code,nm);};
 }
 function joinRoom(code,name){
-  ROLE='client';isOnline=true;
+  ROLE='client';isOnline=true;armExit();
   showScreen(`<h2>Connecting…</h2><p class="sub">Joining room ${escapeHtml(code)}…</p><div class="err" id="jerr"></div><span class="link" id="back">← Cancel</span>`);
   document.getElementById('back').onclick=()=>location.reload();
   peer=new Peer(PEER_OPTS);
